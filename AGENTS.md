@@ -7,3 +7,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## ICM: interpretable context methodology
+
+- **Intent:** This file gives repository-wide agent boundaries. Follow the closest nested `AGENTS.md` for folder-specific context.
+- **Context:** Read the local `status.md` before editing and keep it current when durable implementation status changes.
+- **Map:** Read the nearest `routes.md` before changing a user-facing page or API endpoint.
+- Keep each documentation file below 500 words. Never copy secrets into documentation. Generated and dependency folders are excluded.
+- The backend currently uses MongoDB/Mongoose. A possible Supabase migration is only an assessment; do not assume it has started.
