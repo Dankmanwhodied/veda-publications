@@ -74,6 +74,9 @@ function createDataStore({
     return data;
   };
 
+  // MongoDB runs as one long-lived local process, so memory is enough there.
+  const memoryLoginAttempts = new Map();
+
   return {
     provider,
     async connect() {
@@ -87,6 +90,7 @@ function createDataStore({
       const results = await Promise.all([
         supabase.from("books").select("id").limit(1),
         supabase.from("editor_accounts").select("id").limit(1),
+        supabase.from("login_attempts").select("key_hash").limit(1),
       ]);
       for (const { error } of results) {
         if (error) throw error;
@@ -215,6 +219,54 @@ function createDataStore({
         await getClient().from("editor_accounts").select("id,name,email,role").eq("id", id).maybeSingle()
       );
       return data ? { ...data, _id: data.id } : null;
+    },
+    async getLoginAttempt(keyHash) {
+      if (provider === "mongodb") {
+        const attempt = memoryLoginAttempts.get(keyHash);
+        if (attempt && attempt.resetAt <= Date.now()) {
+          memoryLoginAttempts.delete(keyHash);
+          return null;
+        }
+        return attempt || null;
+      }
+      const data = throwIfError(
+        await getClient()
+          .from("login_attempts")
+          .select("attempt_count,reset_at")
+          .eq("key_hash", keyHash)
+          .maybeSingle()
+      );
+      if (!data) return null;
+      const resetAt = Date.parse(data.reset_at);
+      return resetAt > Date.now() ? { count: data.attempt_count, resetAt } : null;
+    },
+    async recordFailedLogin(keyHash, windowMs) {
+      if (provider === "mongodb") {
+        const current = await this.getLoginAttempt(keyHash);
+        const attempt = {
+          count: (current?.count || 0) + 1,
+          resetAt: current?.resetAt || Date.now() + windowMs,
+        };
+        memoryLoginAttempts.set(keyHash, attempt);
+        return attempt;
+      }
+      const data = throwIfError(
+        await getClient().rpc("record_failed_login", {
+          p_key_hash: keyHash,
+          p_window_seconds: Math.ceil(windowMs / 1000),
+        })
+      );
+      const row = Array.isArray(data) ? data[0] : data;
+      return { count: row.attempt_count, resetAt: Date.parse(row.reset_at) };
+    },
+    async clearLoginAttempts(keyHash) {
+      if (provider === "mongodb") {
+        memoryLoginAttempts.delete(keyHash);
+        return;
+      }
+      throwIfError(
+        await getClient().from("login_attempts").delete().eq("key_hash", keyHash)
+      );
     },
     async upsertChiefEditor(editor) {
       if (provider === "mongodb") {

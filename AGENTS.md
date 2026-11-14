@@ -14,4 +14,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Context:** Read the local `status.md` before editing and keep it current when durable implementation status changes.
 - **Map:** Read the nearest `routes.md` before changing a user-facing page or API endpoint.
 - Keep each documentation file below 500 words. Never copy secrets into documentation. Generated and dependency folders are excluded.
-- The backend currently uses MongoDB/Mongoose. A possible Supabase migration is only an assessment; do not assume it has started.
+- Go-live to Vercel + Supabase is approved and in progress per `GO_LIVE_SPEC.md`. MongoDB stays the local Compose default until cutover; check `status.md` for what is actually live.

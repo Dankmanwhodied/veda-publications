@@ -18,6 +18,23 @@ if (!process.env.JWT_SECRET || Buffer.byteLength(process.env.JWT_SECRET) < 32) {
   throw new Error("JWT_SECRET must be configured with at least 32 bytes.");
 }
 
+// On Vercel the platform proxy sets X-Forwarded-For, so trust it for req.ip
+// (used by the sign-in rate limit). Locally the API is reached directly.
+if (process.env.VERCEL) {
+  app.set("trust proxy", true);
+}
+
+// Connect once per process. Vercel never calls startServer, so the first
+// request on each instance connects; a failure is retried next request.
+let connection;
+const ensureConnected = () => {
+  connection ||= connectDB().catch((error) => {
+    connection = undefined;
+    throw error;
+  });
+  return connection;
+};
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -33,6 +50,16 @@ app.get("/", (req, res) => {
     success: true,
     message: "Veda Publications API is running 🚀",
   });
+});
+
+app.use("/api", async (_req, _res, next) => {
+  try {
+    await ensureConnected();
+    return next();
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+    return next(Object.assign(new Error("Database unavailable."), { statusCode: 503 }));
+  }
 });
 
 app.use("/api/books", bookRoutes);
@@ -57,7 +84,7 @@ app.use((error, _req, res, _next) => {
 
 const startServer = async () => {
   try {
-    await connectDB();
+    await ensureConnected();
     app.listen(PORT, () => {
       console.log(`🚀 Veda Publications Backend running on port ${PORT}`);
     });
@@ -67,4 +94,9 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// `npm start` / Docker run this file directly; Vercel imports the app instead.
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;

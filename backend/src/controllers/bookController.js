@@ -56,7 +56,7 @@ const validateBook = (book) => {
     } catch {
       return "Enter a valid HTTPS cover URL or a local path.";
     }
-  } else if (book.coverImageUrl.startsWith("//") || book.coverImageUrl.split("/").includes("..")) {
+  } else if (book.coverImageUrl && (book.coverImageUrl.startsWith("//") || book.coverImageUrl.split("/").includes(".."))) {
     return "Enter a site-relative cover image path.";
   }
   return null;

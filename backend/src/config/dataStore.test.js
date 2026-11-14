@@ -241,7 +241,7 @@ test("Supabase connection fails explicitly when credentials are missing", async 
   await assert.rejects(store.connect(), /SUPABASE_URL and SUPABASE_SECRET_KEY are required/);
 });
 
-test("Supabase startup verifies both required tables", async () => {
+test("Supabase startup verifies all required tables", async () => {
   const tables = [];
   const client = {
     from(table) {
@@ -260,7 +260,55 @@ test("Supabase startup verifies both required tables", async () => {
 
   await store.connect();
 
-  assert.deepEqual(tables, ["books", "editor_accounts"]);
+  assert.deepEqual(tables, ["books", "editor_accounts", "login_attempts"]);
+});
+
+test("Supabase failed sign-ins are counted through the atomic database function", async () => {
+  const calls = [];
+  const resetAt = new Date(Date.now() + 60_000).toISOString();
+  const store = createDataStore({
+    provider: "supabase",
+    client: {
+      rpc(name, args) {
+        calls.push([name, args]);
+        return Promise.resolve({ data: [{ attempt_count: 3, reset_at: resetAt }], error: null });
+      },
+    },
+  });
+
+  assert.deepEqual(await store.recordFailedLogin("a".repeat(64), 900_000), {
+    count: 3,
+    resetAt: Date.parse(resetAt),
+  });
+  assert.deepEqual(calls, [
+    ["record_failed_login", { p_key_hash: "a".repeat(64), p_window_seconds: 900 }],
+  ]);
+});
+
+test("Supabase expired sign-in windows are treated as clear", async () => {
+  const query = {
+    select() { return this; },
+    eq() { return this; },
+    maybeSingle() {
+      return Promise.resolve({
+        data: { attempt_count: 8, reset_at: new Date(Date.now() - 1000).toISOString() },
+        error: null,
+      });
+    },
+  };
+  const store = createDataStore({ provider: "supabase", client: { from: () => query } });
+  assert.equal(await store.getLoginAttempt("b".repeat(64)), null);
+});
+
+test("MongoDB sign-in attempts count up in memory and clear", async () => {
+  const store = createDataStore({ provider: "mongodb", getModels: () => ({}) });
+  const key = "c".repeat(64);
+  await store.recordFailedLogin(key, 60_000);
+  const second = await store.recordFailedLogin(key, 60_000);
+  assert.equal(second.count, 2);
+  assert.equal((await store.getLoginAttempt(key)).count, 2);
+  await store.clearLoginAttempts(key);
+  assert.equal(await store.getLoginAttempt(key), null);
 });
 
 test("Supabase errors are propagated to callers", async () => {
